@@ -95,6 +95,7 @@ public:
 // }}}
 
 class lambda;
+typedef std::unique_ptr< lambda > lambda_unique_ptr;
 
 typedef std::set< const lambda * > lambda_pool;
 
@@ -118,14 +119,14 @@ public:
 
 // waiting for implement delegating constructors
 //  explicit inline
-//  lambda_ptr( const std::unique_ptr< lambda > &ptr ) throw( lambda_error )
+//  lambda_ptr( const lambda_unique_ptr &ptr ) throw( lambda_error )
 //    : lambda_ptr( ptr.get() ) {}
 //
 //  explicit inline
-//  lambda_ptr( std::unique_ptr< lambda > &&ptr ) throw( lambda_error )
+//  lambda_ptr( lambda_unique_ptr &&ptr ) throw( lambda_error )
 //    : lambda_ptr( ptr ) {}
     explicit inline
-    lambda_ptr( const std::unique_ptr< lambda > &ptr ) throw( lambda_error )
+    lambda_ptr( const lambda_unique_ptr &ptr ) throw( lambda_error )
       : _ptr( ptr.get() )
     {
         if ( this->_ptr == nullptr )
@@ -133,7 +134,7 @@ public:
     }
 
     explicit inline
-    lambda_ptr( std::unique_ptr< lambda > &&ptr ) throw( lambda_error )
+    lambda_ptr( lambda_unique_ptr &&ptr ) throw( lambda_error )
       : _ptr( ptr.get() )
     {
         if ( this->_ptr == nullptr )
@@ -218,7 +219,7 @@ protected:
     { return *this->pool.insert( l ).first; }
 
     inline auto
-    dup( std::unique_ptr< lambda > &ptr )
+    dup( lambda_unique_ptr &ptr )
       -> void
     {
         this->push( lambda_ptr( ptr.get() ) );
@@ -293,7 +294,7 @@ public:
     {
         if ( this->arg_num != 1 )
         {
-            std::unique_ptr< lambda > uptr( new user( *this ) );
+            lambda_unique_ptr uptr( new user( *this ) );
             dynamic_cast< user * >( uptr.get() )->env.push( l );
 
             this->pool.insert( uptr.get() );
@@ -353,7 +354,7 @@ public:
         { return; }
 
         // FIXME: applicate singleton to id object
-        std::unique_ptr< lambda > _id( new id( this->pool ) );
+        lambda_unique_ptr _id( new id( this->pool ) );
         this->dup( _id );
     }
 };
@@ -471,10 +472,9 @@ public:
         { this->sout.put( **l ); }
         catch ( const lambda_error & )
         {
-            if ( this->force )
-            { this->sout << "<lambda>"; }
-            else
+            if ( !this->force )
             { throw; }
+            this->sout << "<lambda>";
         }
         return l;
     }
@@ -509,8 +509,8 @@ private:
     inserter( _lambda::lambda *ptr )
       -> void try
     {
-        if ( dynamic_cast< _lambda::user * >( ptr ) )
-        { dynamic_cast< _lambda::user * >( ptr )->env = this->env; }
+        if ( auto uptr = dynamic_cast< _lambda::user * >( ptr ) )
+        { uptr->env = this->env; }
 
         this->env.push( _lambda::lambda_ptr( ptr ) );
         this->pool.insert( ptr );
@@ -544,20 +544,28 @@ private:
         this->pool.clear();
     }
 
-    auto
+    inline auto
     parser_impl( void )
       -> void;
 
 public:
-    explicit inline
-    interpret( bool _force_out = false )
-      : sin( std::cin ), sout( std::cout )
-    { this->init( _force_out ); }
-
     inline
     interpret( std::istream &_in, std::ostream &_out,
       bool _force_out = false )
       : sin( _in ), sout( _out )
+    { this->init( _force_out ); }
+
+// waiting for implement delegating constructors
+//  explicit inline
+//  interpret( bool _force_out = false )
+//    : interpret( std::cin, std::cout, _force_out ) {}
+//
+//  inline
+//  interpret( std::iostream &_inout, bool _force_out = false )
+//    : interpret( _inout, _inout, _force_out ) {}
+    explicit inline
+    interpret( bool _force_out = false )
+      : sin( std::cin ), sout( std::cout )
     { this->init( _force_out ); }
 
     inline
