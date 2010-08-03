@@ -28,6 +28,7 @@
 //          | Declared type of an expression
 //  gcc 4.4 | initializer lists
 //          | auto-typed variables
+//          | Strongly-typed enums
 //          | Default and deleted functions
 //          | unique_ptr that using move semantics container
 //  gcc 4.5 | C++0x lambdas
@@ -145,7 +146,7 @@ public:
 
     explicit inline
     operator const lambda *( void ) const
-    { return this->nullcheck(), this->get(); }
+    { return this->get(); }
 
     inline auto
     operator*( void ) const
@@ -252,15 +253,6 @@ protected:
     insert( const lambda *l ) const
       -> lambda_pool::value_type
     { return *this->pool.insert( l ).first; }
-
-    inline auto
-    dup( lambda_unique_ptr &ptr )
-      -> void
-    {
-        this->push( lambda_ptr( ptr.get() ) );
-        this->insert( ptr.get() );
-        ptr.release();
-    }
 
 public:
     lambda( const lambda & ) = default;
