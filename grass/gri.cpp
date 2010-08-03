@@ -24,4 +24,4 @@ auto main( void ) -> int try
     return 0;
 }
 catch ( grass::grass_error &e )
-{ cout << e.what() << endl; }
+{ cout << "except: " << e.what() << endl; }

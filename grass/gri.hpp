@@ -108,6 +108,13 @@ private:
 public:
     lambda_ptr( const lambda_ptr & ) = default;
     lambda_ptr( lambda_ptr && ) = default;
+    auto
+    operator=( const lambda_ptr & )
+      -> lambda_ptr & = default;
+
+    inline
+    lambda_ptr( void ) noexcept
+      : _ptr( nullptr ) {}
 
     explicit inline
     lambda_ptr( const lambda *ptr ) throw( lambda_error )
@@ -154,6 +161,11 @@ public:
     operator*( void ) const noexcept
       -> const lambda &
     { return *this->get(); }
+
+    inline auto
+    operator->( void ) const noexcept
+      -> const lambda *
+    { return this->get(); }
 };
 // }}}
 
@@ -180,7 +192,7 @@ public:
     inline auto
     operator[]( unsigned int idx ) const
       -> _lambda::lambda_ptr
-    { return this->c[ this->size() - idx - 1 ]; }
+    { return this->c.at( this->size() - idx - 1 ); }
 
     inline auto
     clear( void )
@@ -197,6 +209,14 @@ class lambda
   : public std::function< lambda_ptr( lambda_ptr ) >
 {
     typedef std::function< lambda_ptr( lambda_ptr ) > __base;
+
+public:
+    enum class LAZY_POSSIBILITY
+    {
+      POSSIBLE,
+      INPOSSIBLE,
+      DEPENDS
+    };
 
 protected:
     environment env;
@@ -243,26 +263,113 @@ public:
       -> lambda_ptr = 0;
 
     virtual inline auto
+    operator()( const lambda_ptr &l, nullptr_t /*dummy*/ ) const
+      -> lambda_ptr
+    { return this->operator()( l ); }
+
+    virtual inline auto
     operator*( void ) const throw( lambda_error )
       -> char
     {
         throw lambda_error( "invalid reference" );
         return 0;
     }
+
+    virtual auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY = 0;
+};
+// }}}
+
+// class grass::_lambda::future {{{
+class future
+  : public lambda
+{
+    typedef lambda __base;
+
+private:
+    const lambda_ptr func, arg;
+    mutable lambda_ptr cache;
+
+    inline auto
+    eval( void ) const
+      -> lambda_ptr &
+    {
+        if ( !this->cache )
+        { this->cache = ( *this->func )( this->arg, nullptr ); }
+        return this->cache;
+    }
+
+public:
+    inline
+    future( lambda_pool &_pool,
+      const lambda_ptr &_func, const lambda_ptr &_arg )
+      : __base( _pool ), func( _func ), arg( _arg )
+    {
+        if ( this->func->lazy()   == LAZY_POSSIBILITY::INPOSSIBLE
+          || ( this->func->lazy() == LAZY_POSSIBILITY::DEPENDS
+            && this->arg->lazy()  == LAZY_POSSIBILITY::INPOSSIBLE ) )
+        { this->eval(); }
+    }
+
+    virtual inline
+    ~future( void ) noexcept {}
+
+    inline auto
+    operator()( const lambda_ptr &l ) const
+      -> lambda_ptr
+    { return ( *this->eval() )( l ); }
+
+    inline auto
+    operator*( void ) const throw( lambda_error )
+      -> char
+    { return **this->eval(); }
+
+    inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    {
+        LAZY_POSSIBILITY poss = this->func->lazy();
+        if ( poss == LAZY_POSSIBILITY::DEPENDS )
+        { return this->arg->lazy(); }
+        return poss;
+    }
 };
 // }}}
 
 // user defined function
 // class grass::_lambda::user {{{
-class user : public lambda
+class user
+  : public lambda
 {
     typedef lambda __base;
 
+    friend class future;
     friend class grass::interpret;
 
 public:
     typedef std::pair< unsigned int, unsigned int > app_pair_t;
     typedef std::vector< app_pair_t > body_t;
+
+private:
+    inline auto
+    operator()( const lambda_ptr &l, nullptr_t /*dummy*/ ) const
+      -> lambda_ptr
+    {
+        if ( this->arg_num != 1 )
+        { throw lambda_error( "invalid argument nums" ); }
+
+        environment runtime_env( this->env, this->body.size() + 1 );
+        runtime_env.push( l );
+        std::for_each( body.begin(), body.end(),
+          [&]( const app_pair_t &app )
+        {
+            const auto &func = runtime_env[ app.first ],
+                       &arg  = runtime_env[ app.second ];
+            runtime_env.push( ( *func )( arg ) );
+        } );
+        return runtime_env.top();
+    }
 
 protected:
     typedef std::initializer_list< app_pair_t > init_body_t;
@@ -277,9 +384,14 @@ protected:
 
 public:
     inline
-    user( lambda_pool &_pool, unsigned int _num, body_t &&il )
-      : __base( _pool ), arg_num( _num ), body( std::move( il ) ) {}
+    user( lambda_pool &_pool, unsigned int _num, body_t &&ib )
+      : __base( _pool ), arg_num( _num ), body( std::move( ib ) ) {}
 
+// waiting for delegating constructors
+//  inline
+//  user( lambda_pool &_pool, unsigned int _num,
+//    init_body_t &&il = init_body_t() )
+//    : user( _pool, _num, body_t( std::move( il ) ) ) {}
     inline
     user( lambda_pool &_pool, unsigned int _num,
       init_body_t &&il = init_body_t() )
@@ -292,31 +404,30 @@ public:
     operator()( const lambda_ptr &l ) const
       -> lambda_ptr
     {
-        if ( this->arg_num != 1 )
+        lambda_unique_ptr uptr;
+        if ( this->arg_num == 1 )
+        { uptr.reset( new future( this->pool, lambda_ptr( this ), l ) ); }
+        else
         {
-            lambda_unique_ptr uptr( new user( *this ) );
+            uptr.reset( new user( *this ) );
             dynamic_cast< user * >( uptr.get() )->env.push( l );
-
-            this->pool.insert( uptr.get() );
-            return lambda_ptr( uptr.release() );
         }
 
-        environment runtime_env( this->env, this->body.size() + 1 );
-        runtime_env.push( l );
-        std::for_each( body.begin(), body.end(),
-          [&]( const app_pair_t &app )
-        {
-            const auto &func = runtime_env[ app.first ],
-                       &arg  = runtime_env[ app.second ];
-            runtime_env.push( ( *func )( arg ) );
-        } );
-        return runtime_env.top();
+        this->pool.insert( uptr.get() );
+        return lambda_ptr( uptr.release() );
     }
+
+    // FIXME: this is temporary definition and need parse body
+    virtual inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    { return LAZY_POSSIBILITY::INPOSSIBLE; }
 };
 // }}}
 
 // class grass::_lambda::id {{{
-class id : public user
+class id
+  : public user
 {
     typedef user __base;
 
@@ -327,11 +438,19 @@ public:
     explicit inline
     id( lambda_pool &_pool )
       : __base( _pool, 1 ) {}
+
+    // FIXME: this is temporary definition
+    // for more detail, see grass::_lambda::user::lazy()
+    inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    { return LAZY_POSSIBILITY::POSSIBLE; }
 };
 // }}}
 
 // class grass::_lambda::boolalpha {{{
-class boolalpha : public user
+class boolalpha
+  : public user
 {
     typedef user __base;
 
@@ -357,6 +476,13 @@ public:
         lambda_unique_ptr _id( new id( this->pool ) );
         this->dup( _id );
     }
+
+    // FIXME: this is temporary definition
+    // for more detail, see grass::_lambda::user::lazy()
+    inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    { return LAZY_POSSIBILITY::POSSIBLE; }
 };
 // }}}
 
@@ -364,7 +490,8 @@ namespace primitive
 {
 
 // class grass::_lambda::primitive::w {{{
-class w : public lambda
+class w
+  : public lambda
 {
     typedef lambda __base;
 
@@ -392,11 +519,17 @@ public:
     operator*( void ) const noexcept
       -> char
     { return this->c; }
+
+    inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    { return LAZY_POSSIBILITY::POSSIBLE; }
 };
 // }}}
 
 // class grass::_lambda::primitive::succ {{{
-class succ : public lambda
+class succ
+  : public lambda
 {
     typedef lambda __base;
 
@@ -412,14 +545,21 @@ public:
     operator()( const lambda_ptr &l ) const
       -> lambda_ptr
     {
+        // FIXME: applicate singleton to 'w'(or other characters) object
         return lambda_ptr( this->insert(
           new w( this->pool, ( **l + 1 ) % 256 ) ) );
     }
+
+    inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    { return LAZY_POSSIBILITY::POSSIBLE; }
 };
 // }}}
 
 // class grass::_lambda::primitive::in {{{
-class in : public lambda
+class in
+  : public lambda
 {
     typedef lambda __base;
 
@@ -444,11 +584,17 @@ public:
         return lambda_ptr( this->insert(
           new w( this->pool, c ) ) );
     }
+
+    inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    { return LAZY_POSSIBILITY::INPOSSIBLE; }
 };
 // }}}
 
 // class grass::_lambda::primitive::out {{{
-class out : public lambda
+class out
+  : public lambda
 {
     typedef lambda __base;
 
@@ -478,6 +624,11 @@ public:
         }
         return l;
     }
+
+    inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    { return LAZY_POSSIBILITY::INPOSSIBLE; }
 };
 // }}}
 
@@ -606,7 +757,7 @@ public:
     }
 };
 // }}}
-//
+
 namespace
 {
 
