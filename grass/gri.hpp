@@ -28,6 +28,7 @@
 //          | Declared type of an expression
 //  gcc 4.4 | initializer lists
 //          | auto-typed variables
+//          | Strongly-typed enums
 //          | Default and deleted functions
 //          | unique_ptr that using move semantics container
 //  gcc 4.5 | C++0x lambdas
