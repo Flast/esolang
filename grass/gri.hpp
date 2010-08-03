@@ -98,75 +98,103 @@ public:
 class lambda;
 typedef std::unique_ptr< lambda > lambda_unique_ptr;
 
-typedef std::set< const lambda * > lambda_pool;
-
 // class grass::_lambda::lambda_ptr {{{
 class lambda_ptr
 {
 private:
     const lambda *_ptr;
 
+    inline auto
+    nullcheck( void ) const throw( lambda_error )
+      -> void
+    {
+        if ( this->_ptr == nullptr )
+        { throw lambda_error( "null pointer" ); }
+    }
+
 public:
     lambda_ptr( const lambda_ptr & ) = default;
     lambda_ptr( lambda_ptr && ) = default;
-    auto
+    inline auto
     operator=( const lambda_ptr & )
       -> lambda_ptr & = default;
 
-    inline
-    lambda_ptr( void ) noexcept
-      : _ptr( nullptr ) {}
-
     explicit inline
-    lambda_ptr( const lambda *ptr ) throw( lambda_error )
-      : _ptr( ptr )
-    {
-        if ( this->_ptr == nullptr )
-        { throw lambda_error( "null pointer" ); }
-    }
+    lambda_ptr( const lambda *ptr = nullptr )
+      : _ptr( ptr ) {}
 
 // waiting for implement delegating constructors
 //  explicit inline
-//  lambda_ptr( const lambda_unique_ptr &ptr ) throw( lambda_error )
+//  lambda_ptr( const lambda_unique_ptr &ptr )
 //    : lambda_ptr( ptr.get() ) {}
 //
 //  explicit inline
-//  lambda_ptr( lambda_unique_ptr &&ptr ) throw( lambda_error )
+//  lambda_ptr( lambda_unique_ptr &&ptr )
 //    : lambda_ptr( ptr ) {}
     explicit inline
-    lambda_ptr( const lambda_unique_ptr &ptr ) throw( lambda_error )
-      : _ptr( ptr.get() )
-    {
-        if ( this->_ptr == nullptr )
-        { throw lambda_error( "null pointer" ); }
-    }
+    lambda_ptr( const lambda_unique_ptr &ptr )
+      : _ptr( ptr.get() ) {}
 
     explicit inline
-    lambda_ptr( lambda_unique_ptr &&ptr ) throw( lambda_error )
-      : _ptr( ptr.get() )
-    {
-        if ( this->_ptr == nullptr )
-        { throw lambda_error( "null pointer" ); }
-    }
+    lambda_ptr( lambda_unique_ptr &&ptr )
+      : _ptr( ptr.get() ) {}
 
     inline auto
-    get( void ) const noexcept
+    get( void ) const
       -> const lambda *
     { return this->_ptr; }
 
     explicit inline
-    operator const lambda *( void ) const noexcept
+    operator const lambda *( void ) const
     { return this->get(); }
 
     inline auto
-    operator*( void ) const noexcept
+    operator*( void ) const
       -> const lambda &
-    { return *this->get(); }
+    { return this->nullcheck(), *this->get(); }
 
     inline auto
-    operator->( void ) const noexcept
+    operator->( void ) const
       -> const lambda *
-    { return this->get(); }
+    { return this->nullcheck(), this->get(); }
+};
+// }}}
+
+// grass::_lambda::lambda_pool {{{
+class lambda_pool
+  : public std::set< const lambda * >
+{
+    typedef std::set< const lambda * > __base;
+
+private:
+    std::vector< lambda_ptr > build_in_func;
+
+public:
+    // enum class BUILDIN {{{
+    enum class BUILDIN
+    {
+      // primitive
+      IN = 0,
+      W,
+      SUCC,
+      OUT,
+
+      // others
+      ID,
+      TRUE,
+      FALSE,
+
+      _SIZE
+    };
+    // }}}
+
+    lambda_pool( void )
+      : build_in_func( std::size_t( BUILDIN::_SIZE ) ) {}
+
+    inline auto
+    operator[]( BUILDIN buildin ) const
+      -> lambda_ptr
+    { return this->build_in_func.at( std::size_t( buildin ) ); }
 };
 // }}}
 
@@ -238,15 +266,6 @@ protected:
     insert( const lambda *l ) const
       -> lambda_pool::value_type
     { return *this->pool.insert( l ).first; }
-
-    inline auto
-    dup( lambda_unique_ptr &ptr )
-      -> void
-    {
-        this->push( lambda_ptr( ptr.get() ) );
-        this->insert( ptr.get() );
-        ptr.release();
-    }
 
 public:
     lambda( const lambda & ) = default;
@@ -473,9 +492,7 @@ public:
         if ( !_b )
         { return; }
 
-        // FIXME: applicate singleton to id object
-        lambda_unique_ptr _id( new id( this->pool ) );
-        this->dup( _id );
+        this->env.push( this->pool[ lambda_pool::BUILDIN::ID ] );
     }
 
     // FIXME: this is temporary definition
@@ -511,9 +528,9 @@ public:
     operator()( const lambda_ptr &l ) const
       -> lambda_ptr
     {
-        // FIXME: applicate singleton to true and false object
-        return lambda_ptr( this->insert(
-          new boolalpha( this->pool, **l == this->c ) ) );
+        return this->pool[ **l == this->c
+          ? lambda_pool::BUILDIN::TRUE
+          : lambda_pool::BUILDIN::FALSE ];
     }
 
     inline auto
@@ -546,7 +563,7 @@ public:
     operator()( const lambda_ptr &l ) const
       -> lambda_ptr
     {
-        // FIXME: applicate singleton to 'w'(or other characters) object
+        // FIXME: applicate singleton to character
         return lambda_ptr( this->insert(
           new w( this->pool, ( **l + 1 ) % 256 ) ) );
     }
@@ -582,6 +599,8 @@ public:
         int c = this->sin.get();
         if ( c == EOF )
         { return l; }
+
+        // FIXME: applicate singleton to character
         return lambda_ptr( this->insert(
           new w( this->pool, c ) ) );
     }
@@ -640,6 +659,8 @@ public:
 // class grass::interpret {{{
 class interpret
 {
+    typedef _lambda::lambda_pool::BUILDIN BUILDIN;
+
     interpret( const interpret & ) = delete;
     interpret( interpret && ) = delete;
 
@@ -659,13 +680,16 @@ private:
 
     inline auto
     inserter( _lambda::lambda *ptr )
-      -> void try
+      -> _lambda::lambda_ptr
+    try
     {
         if ( auto uptr = dynamic_cast< _lambda::user * >( ptr ) )
         { uptr->env = this->env; }
 
-        this->env.push( _lambda::lambda_ptr( ptr ) );
+        _lambda::lambda_ptr lptr( ptr );
+        this->env.push( lptr );
         this->pool.insert( ptr );
+        return lptr;
     }
     catch ( ... )
     {
@@ -680,10 +704,14 @@ private:
         this->release();
 
         using namespace _lambda::primitive;
-        this->inserter( new in( this->pool, this->sin ) );
-        this->inserter( new w( this->pool ) );
-        this->inserter( new succ( this->pool ) );
-        this->inserter( new out( this->pool, this->sout, force_out ) );
+        this->pool[ BUILDIN::IN ] =
+          this->inserter( new in( this->pool, this->sin ) );
+        this->pool[ BUILDIN::W ] =
+          this->inserter( new w( this->pool ) );
+        this->pool[ BUILDIN::SUCC ] =
+          this->inserter( new succ( this->pool ) );
+        this->pool[ BUILDIN::OUT ] =
+          this->inserter( new out( this->pool, this->sout, force_out ) );
     }
 
     inline auto
