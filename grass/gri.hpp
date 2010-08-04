@@ -836,7 +836,8 @@ auto interpret::parser_impl( void )
                 throw grass_error( "internal error (unexpected application terminate)" );
 
               case GR_FUNCTION:
-                this->inserter( new _lambda::user( this->pool, args, std::move( body ) ) );
+                this->inserter( new _lambda
+                  ::user( this->pool, args, std::move( body ) ) );
                 state = GR_TOPLEVEL; // PATH THROUGH
 
               case GR_TOPLEVEL: // PATH THROUGH
@@ -866,7 +867,8 @@ auto interpret::parser_impl( void )
               case GR_APPLICATION:
                 if ( c != 'w' )
                 { throw grass_error( "internal error (unexpected char in application)" ); }
-                this->env.push( ( *this->env[ func ] )( this->env[ region.first ] ) );
+                this->inserter( new _lambda::future( this->pool,
+                  this->env[ func ], this->env[ region.first ] ) );
                 state = GR_TOPLEVEL;
                 continue_itr = region.second;
                 break;
@@ -882,7 +884,9 @@ auto interpret::parser_impl( void )
 
                 if ( *itr != 'w' )
                 { throw grass_error( "internal error (unexpected char in function args)" ); }
-                body.push_back( typename std::identity< decltype( body ) >::type::value_type( func - 1, region.first - 1 ) );
+                body.push_back( typename std
+                  ::identity< decltype( body ) >::type
+                    ::value_type( func - 1, region.first - 1 ) );
                 break;
             }
         }
