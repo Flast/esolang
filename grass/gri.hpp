@@ -643,7 +643,7 @@ public:
     }
 };
 // }}}
-//
+
 namespace
 {
 
