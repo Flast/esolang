@@ -28,6 +28,7 @@
 //          | Declared type of an expression
 //  gcc 4.4 | initializer lists
 //          | auto-typed variables
+//          | New function declarator syntax
 //          | Strongly-typed enums
 //          | Default and deleted functions
 //          | unique_ptr that using move semantics container
@@ -47,6 +48,7 @@
 #include <iostream>
 
 // container
+#include <string>
 #include <utility>
 #include <initializer_list>
 #include <vector>
@@ -58,6 +60,8 @@
 #include <memory>
 #include <algorithm>
 #include <stdexcept>
+
+#include "../ecci.hpp"
 // }}}
 
 namespace grass
@@ -515,11 +519,10 @@ public:
 
 // class grass::interpret {{{
 class interpret
+  : public _ecci::_ecci_base
 {
+    typedef _ecci::_ecci_base __base;
     typedef _lambda::lambda_pool::BUILDIN BUILDIN;
-
-    interpret( const interpret & ) = delete;
-    interpret( interpret && ) = delete;
 
     interpret &
     operator=( const interpret & ) = delete;
@@ -529,9 +532,6 @@ class interpret
 private:
     environment env;
     _lambda::lambda_pool pool;
-
-    std::istream &sin;
-    std::ostream &sout;
 
     std::string buf;
 
@@ -560,15 +560,15 @@ private:
     {
         this->release();
 
-        using namespace _lambda::primitive;
+        namespace lp = _lambda::primitive;
         this->pool[ BUILDIN::IN ] =
-          this->inserter( new in( this->pool, this->sin ) );
+          this->inserter( new lp::in( this->pool, this->in() ) );
         this->pool[ BUILDIN::W ] =
-          this->inserter( new w( this->pool ) );
+          this->inserter( new lp::w( this->pool ) );
         this->pool[ BUILDIN::SUCC ] =
-          this->inserter( new succ( this->pool ) );
+          this->inserter( new lp::succ( this->pool ) );
         this->pool[ BUILDIN::OUT ] =
-          this->inserter( new out( this->pool, this->sout, force_out ) );
+          this->inserter( new lp::out( this->pool, this->out(), force_out ) );
     }
 
     inline auto
@@ -586,36 +586,29 @@ private:
       -> void;
 
 public:
+    explicit inline
+    interpret( bool _force_out = false )
+    { this->init( _force_out ); }
+
     inline
     interpret( std::istream &_in, std::ostream &_out,
       bool _force_out = false )
-      : sin( _in ), sout( _out )
+      : __base( _in, _out )
     { this->init( _force_out ); }
+//    : __base( _in, _out ), interpret( _force_out ) {}
 
-// waiting for implement delegating constructors
-//  explicit inline
-//  interpret( bool _force_out = false )
-//    : interpret( std::cin, std::cout, _force_out ) {}
-//
-//  inline
-//  interpret( std::iostream &_inout, bool _force_out = false )
-//    : interpret( _inout, _inout, _force_out ) {}
     explicit inline
-    interpret( bool _force_out = false )
-      : sin( std::cin ), sout( std::cout )
-    { this->init( _force_out ); }
-
-    inline
     interpret( std::iostream &_inout, bool _force_out = false )
-      : sin( _inout ), sout( _inout )
+      : __base( _inout )
     { this->init( _force_out ); }
+//    : __base( _inout ), interpret( _force_out ) {}
 
     inline
     ~interpret( void ) noexcept
     { this->release(); }
 
     inline auto
-    parse( const string &code )
+    parse( const std::string &code )
       -> void
     {
         auto validity_checker = []( char c )
@@ -643,7 +636,7 @@ public:
     }
 };
 // }}}
-//
+
 namespace
 {
 
