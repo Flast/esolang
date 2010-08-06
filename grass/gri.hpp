@@ -127,21 +127,15 @@ public:
     lambda_ptr( const lambda *ptr = nullptr )
       : _ptr( ptr ) {}
 
-// waiting for implement delegating constructors
-//  explicit inline
-//  lambda_ptr( const lambda_unique_ptr &ptr )
-//    : lambda_ptr( ptr.get() ) {}
-//
-//  explicit inline
-//  lambda_ptr( lambda_unique_ptr &&ptr )
-//    : lambda_ptr( ptr ) {}
     explicit inline
     lambda_ptr( const lambda_unique_ptr &ptr )
       : _ptr( ptr.get() ) {}
+//    : lambda_ptr( ptr.get() ) {}
 
     explicit inline
     lambda_ptr( lambda_unique_ptr &&ptr )
       : _ptr( ptr.get() ) {}
+//    : lambda_ptr( ptr ) {}
 
     inline auto
     get( void ) const
@@ -732,7 +726,12 @@ auto interpret::parser_impl( void )
 
                 if ( *itr != 'w' )
                 { throw grass_error( "internal error (unexpected char in function args)" ); }
-                body.push_back( typename std::identity< decltype( body ) >::type::value_type( func - 1, region.first - 1 ) );
+// gcc (GCC) 4.6.0 20100805 (experimental)
+//  gcc lost std::identity<> for some reason.
+//              body.push_back( typename std::identity< decltype( body ) >::type::value_type( func - 1, region.first - 1 ) );
+                body.push_back( typename std::enable_if< true, decltype( body ) >::type::value_type( func - 1, region.first - 1 ) );
+//  And, I hope to become able to write down follow code.
+//              body.push_back( typename decltype( body )::value_type( func - 1, region.first - 1 ) );
                 break;
             }
         }
