@@ -127,21 +127,15 @@ public:
     lambda_ptr( const lambda *ptr = nullptr )
       : _ptr( ptr ) {}
 
-// waiting for implement delegating constructors
-//  explicit inline
-//  lambda_ptr( const lambda_unique_ptr &ptr )
-//    : lambda_ptr( ptr.get() ) {}
-//
-//  explicit inline
-//  lambda_ptr( lambda_unique_ptr &&ptr )
-//    : lambda_ptr( ptr ) {}
     explicit inline
     lambda_ptr( const lambda_unique_ptr &ptr )
       : _ptr( ptr.get() ) {}
+//    : lambda_ptr( ptr.get() ) {}
 
     explicit inline
     lambda_ptr( lambda_unique_ptr &&ptr )
       : _ptr( ptr.get() ) {}
+//    : lambda_ptr( ptr ) {}
 
     inline auto
     get( void ) const
@@ -283,6 +277,14 @@ public:
     ~lambda( void ) noexcept {}
 
     virtual auto
+    real_call( std::vector< lambda_ptr > && ) const
+      -> lambda_ptr
+    {
+        throw lambda_error( "invalid real call" );
+        return lambda_ptr();
+    }
+
+    virtual auto
     operator()( const lambda_ptr & ) const
       -> lambda_ptr = 0;
 
@@ -316,11 +318,16 @@ private:
     mutable lambda_ptr cache;
 
     inline auto
+    real_call( std::vector< lambda_ptr > &&args ) const
+      -> lambda_ptr
+    { return this->eval()->real_call( std::move( args ) ); }
+
+    inline auto
     eval( void ) const
       -> lambda_ptr &
     {
         if ( !this->cache )
-        { this->cache = ( *this->func )( this->arg, nullptr ); }
+        { this->cache = this->func->real_call( { this->arg } ); }
         return this->cache;
     }
 
@@ -358,6 +365,50 @@ public:
         { return this->arg->lazy(); }
         return poss;
     }
+};
+// }}}
+
+// class grass::_lambda::partial_apply {{{
+class partial_apply
+  : public lambda
+{
+    typedef lambda __base;
+
+private:
+    const unsigned int arg_num;
+    const lambda_ptr   func, arg;
+
+    inline auto
+    real_call( std::vector< lambda_ptr > &&args ) const
+      -> lambda_ptr
+    {
+        args.push_back( arg );
+        return this->func->real_call( std::move( args ) );
+    }
+
+public:
+    partial_apply( lambda_pool &_pool, unsigned int _num,
+      const lambda_ptr &_func, const lambda_ptr &_arg ) noexcept
+      : __base( _pool ), arg_num( _num ), func( _func ), arg( _arg ) {}
+
+    inline auto
+    operator()( const lambda_ptr &l ) const
+      -> lambda_ptr
+    {
+        if ( this->arg_num != 1 )
+        {
+            lambda_unique_ptr uptr( new partial_apply( this->pool,
+              this->arg_num - 1, lambda_ptr( this ), l ) );
+            this->pool.insert( uptr.get() );
+            return lambda_ptr( uptr.release() );
+        }
+        return this->func->real_call( { arg, l } );
+    }
+
+    inline auto
+    lazy( void ) const noexcept
+      -> LAZY_POSSIBILITY
+    { return this->func->lazy(); }
 };
 // }}}
 
@@ -406,6 +457,27 @@ protected:
       : __base( l ), arg_num( l.arg_num - 1 ),
         body( l.body ) {}
 
+    inline auto
+    real_call( std::vector< lambda_ptr > &&args ) const
+      -> lambda_ptr
+    {
+        if ( this->arg_num != args.size() )
+        { throw lambda_error( "invalid argument number" ); }
+
+        environment renv( this->env, this->body.size() + this->arg_num );
+        std::for_each( args.begin(), args.end(),
+          [&]( lambda_ptr &l ) { renv.push( l ); } );
+
+        std::for_each( this->body.begin(), this->body.end(),
+          [&]( const app_pair_t &app )
+        {
+            const auto &func = renv[ app.first ],
+                       &arg  = renv[ app.second ];
+            renv.push( ( *func )( arg ) );
+        } );
+        return renv.top();
+    }
+
 public:
     inline
     user( lambda_pool &_pool, unsigned int _num, body_t &&ib )
@@ -433,8 +505,8 @@ public:
         { uptr.reset( new future( this->pool, lambda_ptr( this ), l ) ); }
         else
         {
-            uptr.reset( new user( *this ) );
-            dynamic_cast< user * >( uptr.get() )->env.push( l );
+            uptr.reset( new partial_apply( this->pool,
+              this->arg_num - 1, lambda_ptr( this ), l ) );
         }
 
         this->pool.insert( uptr.get() );
@@ -877,9 +949,9 @@ auto interpret::parser_impl( void )
 
                 if ( *itr != 'w' )
                 { throw grass_error( "internal error (unexpected char in function args)" ); }
-                body.push_back( typename std
-                  ::identity< decltype( body ) >::type
-                    ::value_type( func - 1, region.first - 1 ) );
+                body.push_back( typename std::enable_if< true, decltype( body ) >::type::value_type( func - 1, region.first - 1 ) );
+//  And, I hope to become able to write down follow code.
+//              body.push_back( typename decltype( body )::value_type( func - 1, region.first - 1 ) );
                 break;
             }
         }
