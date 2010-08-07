@@ -48,18 +48,19 @@
 #include <iostream>
 
 // container
-#include <string>
 #include <utility>
 #include <initializer_list>
 #include <vector>
 #include <set>
 #include <stack>
 
-// others
-#include <functional>
-#include <memory>
+// algorithm
+#include <type_traits>
 #include <algorithm>
-#include <stdexcept>
+
+// others
+#include <string>
+#include <memory>
 
 #include "../ecci.hpp"
 // }}}
@@ -72,14 +73,14 @@ class interpret;
 
 // class grass::grass_error {{{
 class grass_error
-  : public std::runtime_error
+  : public _ecci::_ecci_error
 {
-    typedef std::runtime_error __base;
+    typedef _ecci::_ecci_error __base;
 
 public:
     explicit inline
     grass_error( const std::string &_x )
-      : __base( _x ) {}
+      : __base( "grass", _x ) {}
 };
 // }}}
 
@@ -233,10 +234,7 @@ namespace _lambda
 
 // class grass::_lambda::lambda {{{
 class lambda
-  : public std::function< lambda_ptr( lambda_ptr ) >
 {
-    typedef std::function< lambda_ptr( lambda_ptr ) > __base;
-
 protected:
     environment env;
 
