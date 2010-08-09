@@ -110,7 +110,7 @@ private:
     const lambda *_ptr;
 
     inline auto
-    nullcheck( void ) const throw( lambda_error )
+    nullcheck( void ) const
       -> void
     {
         if ( this->_ptr == nullptr )
@@ -279,7 +279,7 @@ public:
       -> lambda_ptr = 0;
 
     virtual inline auto
-    operator*( void ) const throw( lambda_error )
+    operator*( void ) const
       -> char
     {
         throw lambda_error( "invalid reference" );
