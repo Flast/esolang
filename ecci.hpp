@@ -32,14 +32,50 @@
 #define _ecci_hpp_
 
 // Headers {{{
-#include <string>
+// stream
 #include <istream>
 #include <ostream>
 #include <iostream>
+#include <sstream>
+
+// others
+#include <string>
+#include <stdexcept>
 // }}}
 
 namespace _ecci
 {
+
+// class _ecci::_ecci_error {{{
+class _ecci_error
+  : public std::runtime_error
+{
+    typedef std::runtime_error __base;
+
+private:
+    std::string _buf;
+
+    static inline auto
+    cat( const std::string &lang, const std::string &_x,
+      std::string &&_buf = std::string() )
+      -> std::string &&
+    {
+        std::stringstream ss;
+        ss << "ecci faltal (" << lang << "): " << _x;
+        auto rtol = []( std::string &&str ) -> std::string &
+        { return static_cast< std::string & >( str ); };
+        _buf.swap( rtol( ss.str() ) );
+        return std::move( _buf );
+    }
+
+public:
+    _ecci_error( const std::string &lang, const std::string &_x )
+      : __base( cat( lang, _x ) ) {}
+
+    virtual
+    ~_ecci_error( void ) noexcept {}
+};
+// }}}
 
 // class _ecci::_ecci_base {{{
 class _ecci_base

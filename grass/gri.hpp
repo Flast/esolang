@@ -48,18 +48,19 @@
 #include <iostream>
 
 // container
-#include <string>
 #include <utility>
 #include <initializer_list>
 #include <vector>
 #include <set>
 #include <stack>
 
-// others
-#include <functional>
-#include <memory>
+// algorithm
+#include <type_traits>
 #include <algorithm>
-#include <stdexcept>
+
+// others
+#include <string>
+#include <memory>
 
 #include "../ecci.hpp"
 // }}}
@@ -72,14 +73,14 @@ class interpret;
 
 // class grass::grass_error {{{
 class grass_error
-  : public std::runtime_error
+  : public _ecci::_ecci_error
 {
-    typedef std::runtime_error __base;
+    typedef _ecci::_ecci_error __base;
 
 public:
     explicit inline
     grass_error( const std::string &_x )
-      : __base( _x ) {}
+      : __base( "grass", _x ) {}
 };
 // }}}
 
@@ -127,21 +128,15 @@ public:
     lambda_ptr( const lambda *ptr = nullptr )
       : _ptr( ptr ) {}
 
-// waiting for implement delegating constructors
-//  explicit inline
-//  lambda_ptr( const lambda_unique_ptr &ptr )
-//    : lambda_ptr( ptr.get() ) {}
-//
-//  explicit inline
-//  lambda_ptr( lambda_unique_ptr &&ptr )
-//    : lambda_ptr( ptr ) {}
     explicit inline
     lambda_ptr( const lambda_unique_ptr &ptr )
       : _ptr( ptr.get() ) {}
+//    : lambda_ptr( ptr.get() ) {}
 
     explicit inline
     lambda_ptr( lambda_unique_ptr &&ptr )
       : _ptr( ptr.get() ) {}
+//    : lambda_ptr( ptr ) {}
 
     inline auto
     get( void ) const
@@ -156,6 +151,11 @@ public:
     operator*( void ) const
       -> const lambda &
     { return this->nullcheck(), *this->get(); }
+
+    inline auto
+    operator->( void ) const
+      -> const lambda *
+    { return this->nullcheck(), this->get(); }
 };
 // }}}
 
@@ -234,10 +234,7 @@ namespace _lambda
 
 // class grass::_lambda::lambda {{{
 class lambda
-  : public std::function< lambda_ptr( lambda_ptr ) >
 {
-    typedef std::function< lambda_ptr( lambda_ptr ) > __base;
-
 protected:
     environment env;
 
@@ -270,6 +267,14 @@ public:
     ~lambda( void ) noexcept {}
 
     virtual auto
+    real_call( std::vector< lambda_ptr > && ) const
+      -> lambda_ptr
+    {
+        throw lambda_error( "invalid real call" );
+        return lambda_ptr();
+    }
+
+    virtual auto
     operator()( const lambda_ptr & ) const
       -> lambda_ptr = 0;
 
@@ -283,9 +288,49 @@ public:
 };
 // }}}
 
+// class grass::_lambda::partial_apply {{{
+class partial_apply
+  : public lambda
+{
+    typedef lambda __base;
+
+private:
+    const unsigned int arg_num;
+    const lambda_ptr   func, arg;
+
+    inline auto
+    real_call( std::vector< lambda_ptr > &&args ) const
+      -> lambda_ptr
+    {
+        args.push_back( arg );
+        return this->func->real_call( std::move( args ) );
+    }
+
+public:
+    partial_apply( lambda_pool &_pool, unsigned int _num,
+      const lambda_ptr &_func, const lambda_ptr &_arg ) noexcept
+      : __base( _pool ), arg_num( _num ), func( _func ), arg( _arg ) {}
+
+    inline auto
+    operator()( const lambda_ptr &l ) const
+      -> lambda_ptr
+    {
+        if ( this->arg_num != 1 )
+        {
+            lambda_unique_ptr uptr( new partial_apply( this->pool,
+              this->arg_num - 1, lambda_ptr( this ), l ) );
+            this->pool.insert( uptr.get() );
+            return lambda_ptr( uptr.release() );
+        }
+        return this->func->real_call( { arg, l } );
+    }
+};
+// }}}
+
 // user defined function
 // class grass::_lambda::user {{{
-class user : public lambda
+class user
+  : public lambda
 {
     typedef lambda __base;
 
@@ -306,6 +351,27 @@ protected:
       : __base( l ), arg_num( l.arg_num - 1 ),
         body( l.body ) {}
 
+    inline auto
+    real_call( std::vector< lambda_ptr > &&args ) const
+      -> lambda_ptr
+    {
+        if ( this->arg_num != args.size() )
+        { throw lambda_error( "invalid argument number" ); }
+
+        environment renv( this->env, this->body.size() + this->arg_num );
+        std::for_each( args.begin(), args.end(),
+          [&]( lambda_ptr &l ) { renv.push( l ); } );
+
+        std::for_each( this->body.begin(), this->body.end(),
+          [&]( const app_pair_t &app )
+        {
+            const auto &func = renv[ app.first ],
+                       &arg  = renv[ app.second ];
+            renv.push( ( *func )( arg ) );
+        } );
+        return renv.top();
+    }
+
 public:
     inline
     user( lambda_pool &_pool, unsigned int _num, body_t &&il )
@@ -325,29 +391,19 @@ public:
     {
         if ( this->arg_num != 1 )
         {
-            lambda_unique_ptr uptr( new user( *this ) );
-            dynamic_cast< user * >( uptr.get() )->env.push( l );
-
+            lambda_unique_ptr uptr( new partial_apply( this->pool,
+              this->arg_num - 1, lambda_ptr( this ), l ) );
             this->pool.insert( uptr.get() );
             return lambda_ptr( uptr.release() );
         }
-
-        environment runtime_env( this->env, this->body.size() + 1 );
-        runtime_env.push( l );
-        std::for_each( body.begin(), body.end(),
-          [&]( const app_pair_t &app )
-        {
-            const auto &func = runtime_env[ app.first ],
-                       &arg  = runtime_env[ app.second ];
-            runtime_env.push( ( *func )( arg ) );
-        } );
-        return runtime_env.top();
+        return this->real_call( { l } );
     }
 };
 // }}}
 
 // class grass::_lambda::id {{{
-class id : public user
+class id
+  : public user
 {
     typedef user __base;
 
@@ -362,7 +418,8 @@ public:
 // }}}
 
 // class grass::_lambda::boolalpha {{{
-class boolalpha : public user
+class boolalpha
+  : public user
 {
     typedef user __base;
 
@@ -393,7 +450,8 @@ namespace primitive
 {
 
 // class grass::_lambda::primitive::w {{{
-class w : public lambda
+class w
+  : public lambda
 {
     typedef lambda __base;
 
@@ -425,7 +483,8 @@ public:
 // }}}
 
 // class grass::_lambda::primitive::succ {{{
-class succ : public lambda
+class succ
+  : public lambda
 {
     typedef lambda __base;
 
@@ -449,7 +508,8 @@ public:
 // }}}
 
 // class grass::_lambda::primitive::in {{{
-class in : public lambda
+class in
+  : public lambda
 {
     typedef lambda __base;
 
@@ -480,7 +540,8 @@ public:
 // }}}
 
 // class grass::_lambda::primitive::out {{{
-class out : public lambda
+class out
+  : public lambda
 {
     typedef lambda __base;
 
@@ -732,7 +793,9 @@ auto interpret::parser_impl( void )
 
                 if ( *itr != 'w' )
                 { throw grass_error( "internal error (unexpected char in function args)" ); }
-                body.push_back( typename std::identity< decltype( body ) >::type::value_type( func - 1, region.first - 1 ) );
+                body.push_back( typename std::enable_if< true, decltype( body ) >::type::value_type( func - 1, region.first - 1 ) );
+//  And, I hope to become able to write down follow code.
+//              body.push_back( typename decltype( body )::value_type( func - 1, region.first - 1 ) );
                 break;
             }
         }
