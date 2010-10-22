@@ -4,7 +4,9 @@ using namespace std;
 
 #include "gri.hpp"
 
-auto main( void ) -> int try
+int
+main( void )
+try
 {
     auto start = chrono::system_clock::now();
     grass::interpret Interpreter;
@@ -21,7 +23,7 @@ auto main( void ) -> int try
     Interpreter.run();
     auto end = chrono::system_clock::now();
     cout << endl << "spent: " << chrono::duration_cast< chrono::milliseconds >( end - start ).count() << "ms" << endl;
-    return 0;
 }
 catch ( grass::grass_error &e )
 { cout << e.what() << endl; }
+

@@ -55,10 +55,9 @@ class _ecci_error
 private:
     std::string _buf;
 
-    static inline auto
+    static inline std::string &&
     cat( const std::string &lang, const std::string &_x,
       std::string &&_buf = std::string() )
-      -> std::string &&
     {
         std::stringstream ss;
         ss << "ecci faltal (" << lang << "): " << _x;
@@ -97,40 +96,35 @@ protected:
       : _sin( _inout ), _sout( _inout ) {}
 //    : _ecci_base( std::cin, std::cout ) {}
 
-    inline auto
+    inline std::istream &
     in( void ) noexcept
-      -> std::istream &
     { return this->_sin; }
 
-    inline auto
+    inline const std::istream &
     in( void ) const noexcept
-      -> const std::istream &
     { return this->_sin; }
 
-    inline auto
+    inline std::ostream &
     out( void ) noexcept
-      -> std::ostream &
     { return this->_sout; }
 
-    inline auto
+    inline const std::ostream &
     out( void ) const noexcept
-      -> const std::ostream &
     { return this->_sout; }
 
 public:
     virtual
     ~_ecci_base( void ) noexcept {}
 
-    virtual auto
-    parse( const std::string & )
-      -> void = 0;
+    virtual void
+    parse( const std::string & ) =0;
 
-    virtual auto
-    run( void )
-      -> void = 0;
+    virtual void
+    run( void ) = 0;
 };
 // }}}
 
 } // namespace _ecci
 
 #endif // _ecci_hpp_
+

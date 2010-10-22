@@ -35,6 +35,7 @@
 //  gcc 4.5 | C++0x lambdas
 //          | Explicit conversion operators
 //  gcc 4.6 | Null pointer constant
+//          | Range based for
 //          | noexcept expression
 // }}}
 
@@ -61,6 +62,7 @@
 // others
 #include <string>
 #include <memory>
+#include <iterator>
 
 #include "../ecci.hpp"
 // }}}
@@ -109,9 +111,8 @@ class lambda_ptr
 private:
     const lambda *_ptr;
 
-    inline auto
+    inline void
     nullcheck( void ) const
-      -> void
     {
         if ( this->_ptr == nullptr )
         { throw lambda_error( "null pointer" ); }
@@ -120,9 +121,8 @@ private:
 public:
     lambda_ptr( const lambda_ptr & ) = default;
     lambda_ptr( lambda_ptr && ) = default;
-    inline auto
-    operator=( const lambda_ptr & )
-      -> lambda_ptr & = default;
+    inline lambda_ptr &
+    operator=( const lambda_ptr & ) = default;
 
     explicit inline
     lambda_ptr( const lambda *ptr = nullptr )
@@ -138,23 +138,20 @@ public:
       : _ptr( ptr.get() ) {}
 //    : lambda_ptr( ptr ) {}
 
-    inline auto
+    inline const lambda *
     get( void ) const
-      -> const lambda *
     { return this->_ptr; }
 
     explicit inline
     operator const lambda *( void ) const
     { return this->get(); }
 
-    inline auto
+    inline const lambda &
     operator*( void ) const
-      -> const lambda &
     { return this->nullcheck(), *this->get(); }
 
-    inline auto
+    inline const lambda *
     operator->( void ) const
-      -> const lambda *
     { return this->nullcheck(), this->get(); }
 };
 // }}}
@@ -190,9 +187,8 @@ public:
     lambda_pool( void )
       : build_in_func( std::size_t( BUILDIN::_SIZE ) ) {}
 
-    inline auto
+    inline lambda_ptr
     operator[]( BUILDIN buildin ) const
-      -> lambda_ptr
     { return this->build_in_func.at( std::size_t( buildin ) ); }
 };
 // }}}
@@ -217,14 +213,12 @@ public:
         this->c.assign( env.c.begin(), env.c.end() );
     }
 
-    inline auto
+    inline _lambda::lambda_ptr
     operator[]( unsigned int idx ) const
-      -> _lambda::lambda_ptr
     { return this->c[ this->size() - idx - 1 ]; }
 
-    inline auto
+    inline void
     clear( void )
-      -> void
     { this->c.clear(); }
 };
 // }}}
@@ -240,19 +234,16 @@ protected:
 
     mutable lambda_pool &pool;
 
-    inline auto
+    inline lambda_ptr
     operator[]( unsigned int idx )
-      -> lambda_ptr
     { return this->env[ idx + 1 ]; }
 
-    inline auto
+    inline void
     push( const lambda_ptr &l )
-      -> void
     { this->env.push( l ); }
 
-    inline auto
+    inline lambda_pool::value_type
     insert( const lambda *l ) const
-      -> lambda_pool::value_type
     { return *this->pool.insert( l ).first; }
 
 public:
@@ -266,21 +257,18 @@ public:
     virtual inline
     ~lambda( void ) noexcept {}
 
-    virtual auto
+    virtual lambda_ptr
     real_call( std::vector< lambda_ptr > && ) const
-      -> lambda_ptr
     {
         throw lambda_error( "invalid real call" );
         return lambda_ptr();
     }
 
-    virtual auto
-    operator()( const lambda_ptr & ) const
-      -> lambda_ptr = 0;
+    virtual lambda_ptr
+    operator()( const lambda_ptr & ) const = 0;
 
-    virtual inline auto
+    virtual inline char
     operator*( void ) const
-      -> char
     {
         throw lambda_error( "invalid reference" );
         return 0;
@@ -298,9 +286,8 @@ private:
     const unsigned int arg_num;
     const lambda_ptr   func, arg;
 
-    inline auto
+    inline lambda_ptr
     real_call( std::vector< lambda_ptr > &&args ) const
-      -> lambda_ptr
     {
         args.push_back( arg );
         return this->func->real_call( std::move( args ) );
@@ -311,9 +298,8 @@ public:
       const lambda_ptr &_func, const lambda_ptr &_arg ) noexcept
       : __base( _pool ), arg_num( _num ), func( _func ), arg( _arg ) {}
 
-    inline auto
+    inline lambda_ptr
     operator()( const lambda_ptr &l ) const
-      -> lambda_ptr
     {
         if ( this->arg_num != 1 )
         {
@@ -351,24 +337,22 @@ protected:
       : __base( l ), arg_num( l.arg_num - 1 ),
         body( l.body ) {}
 
-    inline auto
+    inline lambda_ptr
     real_call( std::vector< lambda_ptr > &&args ) const
-      -> lambda_ptr
     {
         if ( this->arg_num != args.size() )
         { throw lambda_error( "invalid argument number" ); }
 
         environment renv( this->env, this->body.size() + this->arg_num );
-        std::for_each( args.begin(), args.end(),
-          [&]( lambda_ptr &l ) { renv.push( l ); } );
+        for ( auto &l : args )
+        { renv.push( l ); }
 
-        std::for_each( this->body.begin(), this->body.end(),
-          [&]( const app_pair_t &app )
+        for ( const auto &app : this->body )
         {
             const auto &func = renv[ app.first ],
                        &arg  = renv[ app.second ];
             renv.push( ( *func )( arg ) );
-        } );
+        }
         return renv.top();
     }
 
@@ -385,9 +369,8 @@ public:
     virtual inline
     ~user( void ) noexcept {}
 
-    virtual inline auto
+    virtual inline lambda_ptr
     operator()( const lambda_ptr &l ) const
-      -> lambda_ptr
     {
         if ( this->arg_num != 1 )
         {
@@ -424,10 +407,9 @@ class boolalpha
     typedef user __base;
 
 private:
-    static inline auto
+    static inline init_body_t &&
     gen_body( bool _b, init_body_t &&true_body,
       init_body_t &&false_body ) noexcept
-      -> init_body_t &&
     { return std::move( _b ? true_body : false_body ); }
 
 public:
@@ -466,18 +448,16 @@ public:
     w( lambda_pool &_pool, char _x = 'w' ) noexcept
       : __base( _pool ), c( _x ) {}
 
-    inline auto
+    inline lambda_ptr
     operator()( const lambda_ptr &l ) const
-      -> lambda_ptr
     {
         return this->pool[ **l == this->c
           ? lambda_pool::BUILDIN::TRUE
           : lambda_pool::BUILDIN::FALSE ];
     }
 
-    inline auto
+    inline char
     operator*( void ) const noexcept
-      -> char
     { return this->c; }
 };
 // }}}
@@ -496,9 +476,8 @@ public:
     succ( lambda_pool &_pool ) noexcept
       : __base( _pool ) {}
 
-    inline auto
+    inline lambda_ptr
     operator()( const lambda_ptr &l ) const
-      -> lambda_ptr
     {
         // FIXME: applicate singleton to character
         return lambda_ptr( this->insert(
@@ -524,9 +503,8 @@ public:
     in( lambda_pool &_pool, std::istream &_in ) noexcept
       : __base( _pool ), sin( _in ) {}
 
-    inline auto
+    inline lambda_ptr
     operator()( const lambda_ptr &l ) const
-      -> lambda_ptr
     {
         int c = this->sin.get();
         if ( c == EOF )
@@ -557,9 +535,8 @@ public:
     out( lambda_pool &_pool, std::ostream &_out, bool _f = false ) noexcept
       : __base( _pool ), sout( _out ), force( _f ) {}
 
-    inline auto
+    inline lambda_ptr
     operator()( const lambda_ptr &l ) const
-      -> lambda_ptr
     {
         try
         { this->sout.put( **l ); }
@@ -596,9 +573,8 @@ private:
 
     std::string buf;
 
-    inline auto
+    inline _lambda::lambda_ptr
     inserter( _lambda::lambda *ptr )
-      -> _lambda::lambda_ptr
     try
     {
         if ( auto uptr = dynamic_cast< _lambda::user * >( ptr ) )
@@ -615,9 +591,8 @@ private:
         throw;
     }
 
-    inline auto
+    inline void
     init( bool force_out )
-      -> void
     {
         this->release();
 
@@ -632,19 +607,17 @@ private:
           this->inserter( new lp::out( this->pool, this->out(), force_out ) );
     }
 
-    inline auto
+    inline void
     release( void ) noexcept
-      -> void
     {
         this->env.clear();
-        std::for_each( this->pool.begin(), this->pool.end(),
-          []( const _lambda::lambda *ptr ) noexcept { delete ptr; } );
+        for ( const auto *ptr : this->pool )
+        { delete ptr; }
         this->pool.clear();
     }
 
-    inline auto
-    parser_impl( void )
-      -> void;
+    inline void
+    parser_impl( void );
 
 public:
     explicit inline
@@ -668,24 +641,19 @@ public:
     ~interpret( void ) noexcept
     { this->release(); }
 
-    inline auto
+    inline void
     parse( const std::string &code )
-      -> void
     {
         auto validity_checker = []( char c )
         { return c == 'w' || c == 'W' || c == 'v'; };
 
-        std::string tmp_code( std::count_if(
-          code.begin(), code.end(), validity_checker ), 0 );
         std::copy_if( code.begin(), code.end(),
-          tmp_code.begin(), validity_checker );
-        this->buf += tmp_code;
+          std::back_inserter( this->buf ), validity_checker );
         this->parser_impl();
     }
 
-    inline auto
+    inline void
     run( void )
-      -> void
     {
         if ( this->buf.size() != 0 )
         {
@@ -703,9 +671,8 @@ namespace
 
 // grass::<anonymous namespace>::continuos_region() {{{
 template < typename _ForwardIterator >
-inline auto
+inline std::pair< std::size_t, _ForwardIterator >
 continuos_region( _ForwardIterator _first, _ForwardIterator _last )
-  -> std::pair< std::size_t, _ForwardIterator >
 {
     std::size_t cnt = 0;
     for ( auto &_val = *_first;
@@ -718,8 +685,8 @@ continuos_region( _ForwardIterator _first, _ForwardIterator _last )
 }
 
 // grass::interpret::parser_impl() {{{
-auto interpret::parser_impl( void )
-  -> void
+void
+interpret::parser_impl( void )
 {
     const auto &cend = this->buf.end();
     auto       &&itr = this->buf.begin(), continue_itr = itr;
@@ -802,10 +769,11 @@ auto interpret::parser_impl( void )
         itr = region.second;
     }
 
-    this->buf = std::string( continue_itr, cend );
+    this->buf.assign( continue_itr, cend );
 }
 // }}}
 
 } // namespace grass
 
 #endif // _gri_hpp_
+
