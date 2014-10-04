@@ -1,8 +1,6 @@
 // Esolang compiler collections interpreter - ecci.hpp
-//                  Copyright(c) 2010 - 2010 Flast All rights reserved.
+//                  Copyright(c) 2010 - 2014 Flast All rights reserved.
 
-// COPYING {{{
-//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
@@ -20,111 +18,81 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
-// }}}
 
-// used C++0x features and required gcc version list {{{
-//  gcc 4.4 | New function declarator syntax
-//  gcc 4.6 | noexcept expression
-// }}}
+#ifndef esolang_ecci_hpp_
+#define esolang_ecci_hpp_
 
-#ifndef _ecci_hpp_
-#define _ecci_hpp_
-
-// Headers {{{
-// stream
 #include <istream>
 #include <ostream>
 #include <iostream>
 #include <sstream>
 
-// others
 #include <string>
 #include <stdexcept>
-// }}}
 
-namespace _ecci
+namespace ecci {
+
+class ecci_error : public std::runtime_error
 {
-
-// class _ecci::_ecci_error {{{
-class _ecci_error
-  : public std::runtime_error
-{
-    typedef std::runtime_error __base;
-
-private:
-    std::string _buf;
-
-    static inline std::string &&
-    cat( const std::string &lang, const std::string &_x,
-      std::string &&_buf = std::string() )
+    static inline std::string
+    cat(const std::string &lang, const std::string &x)
     {
-        std::stringstream ss;
-        ss << "ecci faltal (" << lang << "): " << _x;
-        auto rtol = []( std::string &&str ) -> std::string &
-        { return static_cast< std::string & >( str ); };
-        _buf.swap( rtol( ss.str() ) );
-        return std::move( _buf );
+        std::ostringstream ss;
+        ss << "ecci faltal (" << lang << "): " << x;
+        return ss.str();
     }
 
 public:
-    _ecci_error( const std::string &lang, const std::string &_x )
-      : __base( cat( lang, _x ) ) {}
-
-    virtual
-    ~_ecci_error( void ) noexcept {}
+    explicit
+    ecci_error(const std::string &lang, const std::string &x)
+      : std::runtime_error(cat(lang, x))
+    {}
 };
-// }}}
 
-// class _ecci::_ecci_base {{{
-class _ecci_base
+class ecci_base
 {
-private:
-    std::istream &_sin;
-    std::ostream &_sout;
+    std::istream &sin;
+    std::ostream &sout;
 
 protected:
-    _ecci_base( std::istream &_in, std::ostream &_out ) noexcept
-      : _sin( _in ), _sout( _out ) {}
+    constexpr explicit
+    ecci_base(std::istream &in, std::ostream &out) noexcept
+      : sin(in), sout(out)
+    {}
 
-    _ecci_base( void ) noexcept
-      : _sin( std::cin ), _sout( std::cout ) {}
-//    : _ecci_base( std::cin, std::cout ) {}
+    constexpr
+    ecci_base() noexcept
+      : ecci_base(std::cin, std::cout)
+    {}
 
-    explicit
-    _ecci_base( std::iostream &_inout ) noexcept
-      : _sin( _inout ), _sout( _inout ) {}
-//    : _ecci_base( std::cin, std::cout ) {}
+    constexpr explicit
+    ecci_base(std::iostream &inout) noexcept
+      : ecci_base(inout, inout)
+    {}
 
-    inline std::istream &
-    in( void ) noexcept
-    { return this->_sin; }
-
-    inline const std::istream &
-    in( void ) const noexcept
-    { return this->_sin; }
-
-    inline std::ostream &
-    out( void ) noexcept
-    { return this->_sout; }
-
-    inline const std::ostream &
-    out( void ) const noexcept
-    { return this->_sout; }
+    virtual ~ecci_base() noexcept {}
 
 public:
-    virtual
-    ~_ecci_base( void ) noexcept {}
+    std::istream &
+    in() noexcept { return sin; }
 
-    virtual void
-    parse( const std::string & ) =0;
+    const std::istream &
+    in() const noexcept { return sin; }
 
-    virtual void
-    run( void ) = 0;
+    std::ostream &
+    out() noexcept { return sout; }
+
+    const std::ostream &
+    out() const noexcept { return sout; }
+
+    virtual ecci_base &
+    parse(const std::string &) = 0;
+
+    virtual ecci_base &
+    run() = 0;
 };
-// }}}
 
-} // namespace _ecci
+} // namespace ecci
 
-#endif // _ecci_hpp_
+#endif // esolang_ecci_hpp_
 

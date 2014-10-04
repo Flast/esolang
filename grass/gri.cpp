@@ -1,29 +1,39 @@
 #include <iostream>
-#include <chrono>
-using namespace std;
+#include <boost/timer/timer.hpp>
 
 #include "gri.hpp"
 
-int
-main( void )
-try
+int main() try
 {
-    auto start = chrono::system_clock::now();
-    grass::interpret Interpreter;
-    Interpreter.parse( "wwWWwWWWwvwwWWWwwWwwWWwvwWWWwwwwwWwwvwWWwWWWWWWWwvwWWWWwwwwwwwWwwvwWWWWWWwwwWwwvwWWWWWWwwwWWWWWWWWwW" );
-    Interpreter.parse( "wwwvwWWWWWWWwwWwwWWWWwWWWWWWwWWWWWWWWWwvwWWWWWWWWWWWwvwWWWWWWWWWWWwvwWWWWwwwwwwwwwwwwwwvwWWwWWWWWWWw" );
-    Interpreter.parse( "WWWWWWwWWWWWWwWWWWWWWwwwwvwWWWwWWWWWWWWwWWWWWWWWWwWWWWWWWWwvwWWWWWWWWWWWWwvwWWWWWWWWWWWwvwWWWWWWWwvw" );
-    Interpreter.parse( "WWWWWwWWWWwWWWWWWWWWWWwWWWWWWWwWWWWWWwWWWWWWWwwwwwWWWWWWWWWwwWWWWWWWWWWwWWWWWWWWWWwWWWWWWWWWWWwWWWWW" );
-    Interpreter.parse( "WWWWWWWWWwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwWWWWWWWWWWWWWwWWWWWWWWWWWWWWWWWWWwWWWWWWWWWWWWWWWwvwWWWWWWwWW" );
-    Interpreter.parse( "WWWwWWWWWWwWWWWWWWwWWWWWWWWWWWWWWwWWWWWWWWwWWWWWWWWWwwwwwWWWWWWWWWWwwwwwwwwwwwwwwwwwwwwwwwwwwwwWWWWW" );
-    Interpreter.parse( "WWWWWWWWWWWwWWWWWWWWWWWWwvwvwWWwwwwwwwwwwwwwwwwwwwwwwwvwWWWWWWWWWwWWWwWWWWWWWWWWwWWWWWWWWWwWWWWWWWWW" );
-    Interpreter.parse( "WWwwwwWWWWWWWWWWWwWWWWWWWWWWWWwwwwwwWWWWWWWWWWWWWWWWWWWWwwwWWWWWWWWWWWWWWWwWWWWWWWWWWWWWWWWwWWWWWWWW" );
-    Interpreter.parse( "WWWWWWWWWwWWWWWWWWWWWWWWWWWwvwWWWWWWWWWWWWwWWWWWWWWWWWWWWWwWWWWWWWWWWWWWWWwWWWWWWWWWWWWWWWWwvwWWWWWW" );
-    Interpreter.parse( "WWWWWWwWWWWWWWWwWWWWWWWWwWWWWWWwWWWWWWw" );
-    Interpreter.run();
-    auto end = chrono::system_clock::now();
-    cout << endl << "spent: " << chrono::duration_cast< chrono::milliseconds >( end - start ).count() << "ms" << endl;
+    boost::timer::auto_cpu_timer t(std::cerr, 3);
+
+    grass::interpreter()
+      .parse("wwWWwWWWwvwwWWWwwWwwWWwvwWWWwwwwwWwwvwWWwWWWWWWWwv")
+      .parse("wWWWWwwwwwwwWwwvwWWWWWWwwwWwwvwWWWWWWwwwWWWWWWWWwW")
+      .parse("wwwvwWWWWWWWwwWwwWWWWwWWWWWWwWWWWWWWWWwvwWWWWWWWWW")
+      .parse("WWwvwWWWWWWWWWWWwvwWWWWwwwwwwwwwwwwwwvwWWwWWWWWWWw")
+      .parse("WWWWWWwWWWWWWwWWWWWWWwwwwvwWWWwWWWWWWWWwWWWWWWWWWw")
+      .parse("WWWWWWWWwvwWWWWWWWWWWWWwvwWWWWWWWWWWWwvwWWWWWWWwvw")
+      .parse("WWWWWwWWWWwWWWWWWWWWWWwWWWWWWWwWWWWWWwWWWWWWWwwwww")
+      .parse("WWWWWWWWWwwWWWWWWWWWWwWWWWWWWWWWwWWWWWWWWWWWwWWWWW")
+      .parse("WWWWWWWWWwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwWWWWWWWWWWW")
+      .parse("WWwWWWWWWWWWWWWWWWWWWWwWWWWWWWWWWWWWWWwvwWWWWWWwWW")
+      .parse("WWWwWWWWWWwWWWWWWWwWWWWWWWWWWWWWWwWWWWWWWWwWWWWWWW")
+      .parse("WWwwwwwWWWWWWWWWWwwwwwwwwwwwwwwwwwwwwwwwwwwwwWWWWW")
+      .parse("WWWWWWWWWWWwWWWWWWWWWWWWwvwvwWWwwwwwwwwwwwwwwwwwww")
+      .parse("wwwwvwWWWWWWWWWwWWWwWWWWWWWWWWwWWWWWWWWWwWWWWWWWWW")
+      .parse("WWwwwwWWWWWWWWWWWwWWWWWWWWWWWWwwwwwwWWWWWWWWWWWWWW")
+      .parse("WWWWWWwwwWWWWWWWWWWWWWWWwWWWWWWWWWWWWWWWWwWWWWWWWW")
+      .parse("WWWWWWWWWwWWWWWWWWWWWWWWWWWwvwWWWWWWWWWWWWwWWWWWWW")
+      .parse("WWWWWWWWwWWWWWWWWWWWWWWWwWWWWWWWWWWWWWWWWwvwWWWWWW")
+      .parse("WWWWWWwWWWWWWWWwWWWWWWWWwWWWWWWwWWWWWWw")
+      .run();
+    t.stop();
+
+    std::cerr << '\n';
 }
-catch ( grass::grass_error &e )
-{ cout << e.what() << endl; }
+catch (grass::grass_error &e)
+{
+    std::cerr << e.what() << std::endl;
+}
 

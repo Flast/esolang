@@ -1,8 +1,6 @@
-// Grass Interpreter - gri.hpp
+// Grass interpreterer - gri.hpp
 //                  Copyright(c) 2010 - 2010 Flast All rights reserved.
 
-// COPYING {{{
-//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
@@ -20,153 +18,99 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-//
-// }}}
 
-// used C++0x features and required gcc version list {{{
-//  gcc 4.3 | Rvalue reference
-//          | Declared type of an expression
-//  gcc 4.4 | initializer lists
-//          | auto-typed variables
-//          | New function declarator syntax
-//          | Strongly-typed enums
-//          | Default and deleted functions
-//          | unique_ptr that using move semantics container
-//  gcc 4.5 | C++0x lambdas
-//          | Explicit conversion operators
-//  gcc 4.6 | Null pointer constant
-//          | Range based for
-//          | noexcept expression
-// }}}
+#ifndef esolang_gri_hpp_
+#define esolang_gri_hpp_
 
-#ifndef _gri_hpp_
-#define _gri_hpp_
-
-// Headers {{{
-// stream
 #include <istream>
 #include <ostream>
 #include <iostream>
 
-// container
 #include <utility>
 #include <initializer_list>
 #include <vector>
 #include <set>
 #include <stack>
 
-// algorithm
 #include <type_traits>
 #include <algorithm>
 
-// others
 #include <string>
 #include <memory>
+#include "../memory.hpp"
 #include <iterator>
 
 #include "../ecci.hpp"
-// }}}
 
-namespace grass
-{
+#include <boost/throw_exception.hpp>
+
+namespace grass {
 
 class environment;
-class interpret;
+class interpreter;
 
-// class grass::grass_error {{{
-class grass_error
-  : public _ecci::_ecci_error
+struct grass_error : public ecci::ecci_error
 {
-    typedef _ecci::_ecci_error __base;
-
-public:
-    explicit inline
-    grass_error( const std::string &_x )
-      : __base( "grass", _x ) {}
+    explicit
+    grass_error(const std::string &x)
+      : ecci::ecci_error("grass", x)
+    { }
 };
-// }}}
 
-namespace _lambda
+namespace _lambda {
+
+struct lambda_error : public grass_error
 {
-
-// class grass::_lambda::lambda_error {{{
-class lambda_error
-  : public grass_error
-{
-    typedef grass_error __base;
-
-public:
-    explicit inline
-    lambda_error( const std::string &_x )
-      : __base( _x ) {}
+    explicit
+    lambda_error(const std::string &x)
+      : grass_error(x)
+    {}
 };
-// }}}
 
 class lambda;
-typedef std::unique_ptr< lambda > lambda_unique_ptr;
 
-// class grass::_lambda::lambda_ptr {{{
 class lambda_ptr
 {
 private:
-    const lambda *_ptr;
+    const lambda *ptr;
 
-    inline void
-    nullcheck( void ) const
+    void
+    nullcheck() const
     {
-        if ( this->_ptr == nullptr )
-        { throw lambda_error( "null pointer" ); }
+        if (ptr == nullptr)
+        {
+            BOOST_THROW_EXCEPTION(lambda_error("null pointer"));
+        }
     }
 
 public:
-    lambda_ptr( const lambda_ptr & ) = default;
-    lambda_ptr( lambda_ptr && ) = default;
-    inline lambda_ptr &
-    operator=( const lambda_ptr & ) = default;
+    explicit
+    lambda_ptr(const lambda *ptr = nullptr) noexcept
+      : ptr(ptr)
+    { }
 
-    explicit inline
-    lambda_ptr( const lambda *ptr = nullptr )
-      : _ptr( ptr ) {}
+    explicit
+    lambda_ptr(const std::unique_ptr<lambda> &ptr) noexcept
+      : lambda_ptr(ptr.get())
+    { }
 
-    explicit inline
-    lambda_ptr( const lambda_unique_ptr &ptr )
-      : _ptr( ptr.get() ) {}
-//    : lambda_ptr( ptr.get() ) {}
+    const lambda *
+    get() const noexcept { return ptr; }
 
-    explicit inline
-    lambda_ptr( lambda_unique_ptr &&ptr )
-      : _ptr( ptr.get() ) {}
-//    : lambda_ptr( ptr ) {}
+    explicit operator const lambda *() const noexcept { return get(); }
 
-    inline const lambda *
-    get( void ) const
-    { return this->_ptr; }
+    const lambda &
+    operator*() const { return nullcheck(), *get(); }
 
-    explicit inline
-    operator const lambda *( void ) const
-    { return this->get(); }
-
-    inline const lambda &
-    operator*( void ) const
-    { return this->nullcheck(), *this->get(); }
-
-    inline const lambda *
-    operator->( void ) const
-    { return this->nullcheck(), this->get(); }
+    const lambda *
+    operator->() const { return nullcheck(), get(); }
 };
-// }}}
 
-// grass::_lambda::lambda_pool {{{
-class lambda_pool
-  : public std::set< const lambda * >
+class lambda_pool : public std::set<const lambda *>
 {
-    typedef std::set< const lambda * > __base;
-
-private:
-    std::vector< lambda_ptr > build_in_func;
+    std::vector<lambda_ptr> build_in_func;
 
 public:
-    // enum class BUILDIN {{{
     enum class BUILDIN
     {
       // primitive
@@ -182,514 +126,423 @@ public:
 
       _SIZE
     };
-    // }}}
 
-    lambda_pool( void )
-      : build_in_func( std::size_t( BUILDIN::_SIZE ) ) {}
+    lambda_pool()
+      : build_in_func(std::size_t(BUILDIN::_SIZE))
+    { }
 
-    inline lambda_ptr
-    operator[]( BUILDIN buildin ) const
-    { return this->build_in_func.at( std::size_t( buildin ) ); }
-};
-// }}}
-
-} // namespace _lambda
-
-// class grass::environment {{{
-class environment
-  : public std::stack< _lambda::lambda_ptr,
-      std::vector< _lambda::lambda_ptr > >
-{
-    typedef std::stack< _lambda::lambda_ptr,
-      std::vector< _lambda::lambda_ptr > > __base;
-
-public:
-    environment( void ) = default;
-
-    inline
-    environment( const environment &env, std::size_t reserve = 0 )
+    lambda_ptr
+    operator[](BUILDIN buildin) const
     {
-        this->c.reserve( env.size() + reserve );
-        this->c.assign( env.c.begin(), env.c.end() );
+        return build_in_func.at(std::size_t(buildin));
+    }
+};
+
+} // namespace grass::_lambda
+
+class environment
+  : public std::stack<_lambda::lambda_ptr, std::vector<_lambda::lambda_ptr>>
+{
+public:
+    environment() = default;
+
+    environment(const environment &env, std::size_t reserve = 0)
+      : std::stack<_lambda::lambda_ptr, std::vector<_lambda::lambda_ptr>>()
+    {
+        c.reserve(env.size() + reserve);
+        c.assign(env.c.begin(), env.c.end());
     }
 
-    inline _lambda::lambda_ptr
-    operator[]( unsigned int idx ) const
-    { return this->c[ this->size() - idx - 1 ]; }
+    _lambda::lambda_ptr
+    operator[](std::size_t idx) const { return c[size() - idx - 1]; }
 
-    inline void
-    clear( void )
-    { this->c.clear(); }
+    void
+    clear() { c.clear(); }
 };
-// }}}
 
-namespace _lambda
-{
+namespace _lambda {
 
-// class grass::_lambda::lambda {{{
 class lambda
 {
 protected:
     environment env;
 
-    mutable lambda_pool &pool;
+    lambda_pool *pool;
 
-    inline lambda_ptr
-    operator[]( unsigned int idx )
-    { return this->env[ idx + 1 ]; }
+    lambda_ptr
+    operator[](std::size_t idx) { return env[idx + 1]; }
 
-    inline void
-    push( const lambda_ptr &l )
-    { this->env.push( l ); }
+    void
+    push(const lambda_ptr &l) { env.push(l); }
 
-    inline lambda_pool::value_type
-    insert( const lambda *l ) const
-    { return *this->pool.insert( l ).first; }
+    lambda_pool::value_type
+    insert(const lambda *l) const { return *pool->insert(l).first; }
 
 public:
-    lambda( const lambda & ) = default;
-    lambda( lambda && ) = default;
+    lambda(const lambda &) = default;
+    lambda(lambda &&) = default;
 
-    explicit inline
-    lambda( lambda_pool &_pool ) noexcept
-      : pool( _pool ) {}
+    explicit
+    lambda(lambda_pool &pool) noexcept
+      : pool(&pool)
+    { }
 
-    virtual inline
-    ~lambda( void ) noexcept {}
+    virtual ~lambda() noexcept { }
 
-    virtual lambda_ptr
-    real_call( std::vector< lambda_ptr > && ) const
+    [[noreturn]] virtual lambda_ptr
+    real_call(std::vector<lambda_ptr> &&) const
     {
-        throw lambda_error( "invalid real call" );
-        return lambda_ptr();
+        BOOST_THROW_EXCEPTION(lambda_error("invalid real call"));
     }
 
     virtual lambda_ptr
-    operator()( const lambda_ptr & ) const = 0;
+    operator()(const lambda_ptr &) const = 0;
 
-    virtual inline char
-    operator*( void ) const
+    [[noreturn]] virtual char
+    operator*() const
     {
-        throw lambda_error( "invalid reference" );
-        return 0;
+        BOOST_THROW_EXCEPTION(lambda_error("invalid reference"));
     }
 };
-// }}}
 
-// class grass::_lambda::partial_apply {{{
-class partial_apply
-  : public lambda
+class partial_apply final : public lambda
 {
-    typedef lambda __base;
-
-private:
     const unsigned int arg_num;
     const lambda_ptr   func, arg;
 
-    inline lambda_ptr
-    real_call( std::vector< lambda_ptr > &&args ) const
+    lambda_ptr
+    real_call(std::vector<lambda_ptr> &&args) const override
     {
-        args.push_back( arg );
-        return this->func->real_call( std::move( args ) );
+        args.push_back(arg);
+        return func->real_call(std::move(args));
     }
 
 public:
-    partial_apply( lambda_pool &_pool, unsigned int _num,
-      const lambda_ptr &_func, const lambda_ptr &_arg ) noexcept
-      : __base( _pool ), arg_num( _num ), func( _func ), arg( _arg ) {}
+    partial_apply(lambda_pool &pool, unsigned int num,
+                  const lambda_ptr &func, const lambda_ptr &arg) noexcept
+      : lambda(pool), arg_num(num), func(func), arg(arg)
+    { }
 
-    inline lambda_ptr
-    operator()( const lambda_ptr &l ) const
+    lambda_ptr
+    operator()(const lambda_ptr &l) const override
     {
-        if ( this->arg_num != 1 )
+        if (arg_num == 1)
         {
-            lambda_unique_ptr uptr( new partial_apply( this->pool,
-              this->arg_num - 1, lambda_ptr( this ), l ) );
-            this->pool.insert( uptr.get() );
-            return lambda_ptr( uptr.release() );
+            return func->real_call({ arg, l });
         }
-        return this->func->real_call( { arg, l } );
+
+        using ecci::make_unique_ptr;
+        auto pa = make_unique_ptr<partial_apply>(*pool, arg_num - 1, lambda_ptr(this), l);
+        pool->insert(pa.get());
+        return lambda_ptr(pa.release());
     }
 };
-// }}}
 
 // user defined function
-// class grass::_lambda::user {{{
-class user
-  : public lambda
+class user : public lambda
 {
-    typedef lambda __base;
-
-    friend class grass::interpret;
+    friend class grass::interpreter;
 
 public:
-    typedef std::pair< unsigned int, unsigned int > app_pair_t;
-    typedef std::vector< app_pair_t > body_t;
+    typedef std::pair<unsigned int, unsigned int> app_pair_t;
+    typedef std::vector<app_pair_t> body_t;
 
 protected:
-    typedef std::initializer_list< app_pair_t > init_body_t;
+    typedef std::initializer_list<app_pair_t> init_body_t;
 
     const unsigned int arg_num;
     const body_t       body;
 
-    inline
-    user( const user &l )
-      : __base( l ), arg_num( l.arg_num - 1 ),
-        body( l.body ) {}
+    user(const user &l)
+      : lambda(l), arg_num(l.arg_num - 1), body(l.body)
+    { }
 
-    inline lambda_ptr
-    real_call( std::vector< lambda_ptr > &&args ) const
+    lambda_ptr
+    real_call(std::vector<lambda_ptr> &&args) const
     {
-        if ( this->arg_num != args.size() )
-        { throw lambda_error( "invalid argument number" ); }
-
-        environment renv( this->env, this->body.size() + this->arg_num );
-        for ( auto &l : args )
-        { renv.push( l ); }
-
-        for ( const auto &app : this->body )
+        if (arg_num != args.size())
         {
-            const auto &func = renv[ app.first ],
-                       &arg  = renv[ app.second ];
-            renv.push( ( *func )( arg ) );
+            BOOST_THROW_EXCEPTION(lambda_error("invalid argument number"));
+        }
+
+        environment renv(env, body.size() + arg_num);
+        for (auto &l : args) { renv.push(l); }
+
+        for (auto &app : body)
+        {
+            auto func = renv[app.first];
+            auto arg  = renv[app.second];
+            renv.push((*func)(arg));
         }
         return renv.top();
     }
 
 public:
-    inline
-    user( lambda_pool &_pool, unsigned int _num, body_t &&il )
-      : __base( _pool ), arg_num( _num ), body( std::move( il ) ) {}
+    user(lambda_pool &pool, unsigned int num, body_t &&il)
+      : lambda(pool), arg_num(num), body(std::move(il))
+    { }
 
-    inline
-    user( lambda_pool &_pool, unsigned int _num,
-      init_body_t &&il = init_body_t() )
-      : __base( _pool ), arg_num( _num ), body( std::move( il ) ) {}
+    user(lambda_pool &pool, unsigned int num,
+      init_body_t &&il = init_body_t())
+      : lambda(pool), arg_num(num), body(std::move(il))
+    { }
 
-    virtual inline
-    ~user( void ) noexcept {}
-
-    virtual inline lambda_ptr
-    operator()( const lambda_ptr &l ) const
+    virtual lambda_ptr
+    operator()(const lambda_ptr &l) const override
     {
-        if ( this->arg_num != 1 )
+        if (arg_num == 1)
         {
-            lambda_unique_ptr uptr( new partial_apply( this->pool,
-              this->arg_num - 1, lambda_ptr( this ), l ) );
-            this->pool.insert( uptr.get() );
-            return lambda_ptr( uptr.release() );
+            return real_call({ l });
         }
-        return this->real_call( { l } );
+
+        using ecci::make_unique_ptr;
+        auto pa = make_unique_ptr<partial_apply>(*pool, arg_num - 1, lambda_ptr(this), l);
+        pool->insert(pa.get());
+        return lambda_ptr(pa.release());
     }
 };
-// }}}
 
-// class grass::_lambda::id {{{
-class id
-  : public user
+struct id final : public user
 {
-    typedef user __base;
-
-public:
-    id( const id & ) = default;
-    id( id && ) = default;
-
-    explicit inline
-    id( lambda_pool &_pool )
-      : __base( _pool, 1 ) {}
+    explicit
+    id(lambda_pool &pool)
+      : user(pool, 1)
+    { }
 };
-// }}}
 
-// class grass::_lambda::boolalpha {{{
-class boolalpha
-  : public user
+class boolalpha final : public user
 {
-    typedef user __base;
-
-private:
-    static inline init_body_t &&
-    gen_body( bool _b, init_body_t &&true_body,
-      init_body_t &&false_body ) noexcept
-    { return std::move( _b ? true_body : false_body ); }
-
-public:
-    boolalpha( const boolalpha & ) = default;
-    boolalpha( boolalpha && ) = default;
-
-    inline
-    boolalpha( lambda_pool &_pool, bool _b )
-      : __base( _pool, 2, gen_body( _b, { { 3, 2 } }, {} ) )
+    static init_body_t &&
+    gen_body(bool b, init_body_t &&true_, init_body_t &&false_) noexcept
     {
-        if ( !_b )
-        { return; }
+        return std::move(b ? true_ : false_);
+    }
 
-        this->env.push( this->pool[ lambda_pool::BUILDIN::ID ] );
+public:
+    explicit
+    boolalpha(lambda_pool &pool, bool b)
+      : user(pool, 2, gen_body(b, {{ 3, 2 }}, {}))
+    {
+        if (!b) { return; }
+        env.push(pool[lambda_pool::BUILDIN::ID]);
     }
 };
-// }}}
 
-namespace primitive
-{
+namespace primitive {
 
-// class grass::_lambda::primitive::w {{{
-class w
-  : public lambda
+struct w final : public lambda
 {
-    typedef lambda __base;
+    explicit
+    w(lambda_pool &pool, char x = 'w')
+      : lambda(pool), c(x)
+    { }
+
+    lambda_ptr
+    operator()(const lambda_ptr &l) const override
+    {
+        using BUILDIN = lambda_pool::BUILDIN;
+        return (*pool)[(**l == c) ? BUILDIN::TRUE : BUILDIN::FALSE];
+    }
+
+    char
+    operator*() const noexcept override { return c; }
 
 private:
     const char c;
-
-public:
-    w( const w & ) = default;
-    w( w && ) = default;
-
-    inline
-    w( lambda_pool &_pool, char _x = 'w' ) noexcept
-      : __base( _pool ), c( _x ) {}
-
-    inline lambda_ptr
-    operator()( const lambda_ptr &l ) const
-    {
-        return this->pool[ **l == this->c
-          ? lambda_pool::BUILDIN::TRUE
-          : lambda_pool::BUILDIN::FALSE ];
-    }
-
-    inline char
-    operator*( void ) const noexcept
-    { return this->c; }
 };
-// }}}
 
-// class grass::_lambda::primitive::succ {{{
-class succ
-  : public lambda
+struct succ final : public lambda
 {
-    typedef lambda __base;
+    explicit
+    succ(lambda_pool &pool) noexcept
+      : lambda(pool)
+    { }
 
-public:
-    succ( const succ & ) = default;
-    succ( succ && ) = default;
-
-    explicit inline
-    succ( lambda_pool &_pool ) noexcept
-      : __base( _pool ) {}
-
-    inline lambda_ptr
-    operator()( const lambda_ptr &l ) const
+    lambda_ptr
+    operator()( const lambda_ptr &l ) const override
     {
         // FIXME: applicate singleton to character
-        return lambda_ptr( this->insert(
-          new w( this->pool, ( **l + 1 ) % 256 ) ) );
+        return lambda_ptr(insert(new w(*pool, (**l + 1) % 256)));
     }
 };
-// }}}
 
-// class grass::_lambda::primitive::in {{{
-class in
-  : public lambda
+struct in final : public lambda
 {
-    typedef lambda __base;
+    explicit
+    in(lambda_pool &pool, std::istream &in) noexcept
+      : lambda(pool), sin(in)
+    { }
+
+    lambda_ptr
+    operator()(const lambda_ptr &l) const override
+    {
+        int c = sin.get();
+        if (c == EOF) { return l; }
+
+        // FIXME: applicate singleton to character
+        return lambda_ptr(insert(new w(*pool, c)));
+    }
 
 private:
     std::istream &sin;
-
-public:
-    in( const in & ) = default;
-    in( in && ) = default;
-
-    inline
-    in( lambda_pool &_pool, std::istream &_in ) noexcept
-      : __base( _pool ), sin( _in ) {}
-
-    inline lambda_ptr
-    operator()( const lambda_ptr &l ) const
-    {
-        int c = this->sin.get();
-        if ( c == EOF )
-        { return l; }
-
-        // FIXME: applicate singleton to character
-        return lambda_ptr( this->insert(
-          new w( this->pool, c ) ) );
-    }
 };
-// }}}
 
-// class grass::_lambda::primitive::out {{{
-class out
-  : public lambda
+struct out final : public lambda
 {
-    typedef lambda __base;
+    explicit
+    out(lambda_pool &pool, std::ostream &out, bool f = false) noexcept
+      : lambda(pool), sout(out), force(f)
+    { }
+
+    lambda_ptr
+    operator()(const lambda_ptr &l) const override
+    {
+        try
+        {
+            sout.put(**l);
+        }
+        catch (const lambda_error &)
+        {
+            if (!force) { throw; }
+            sout << "<lambda>";
+        }
+        return l;
+    }
 
 private:
     std::ostream &sout;
     bool force;
+};
+
+} // namespace grass::_lambda::primitive
+
+} // namespace grass::_lambda
+
+struct interpreter : public ecci::ecci_base
+{
+    interpreter &
+    operator=(const interpreter &) = delete;
+    interpreter &
+    operator=(interpreter &&) = delete;
+
+private:
+    _lambda::lambda_ptr
+    inserter(_lambda::lambda *pl)
+    try
+    {
+        if (auto upl = dynamic_cast<_lambda::user *>(pl))
+        {
+            upl->env = env;
+        }
+
+        _lambda::lambda_ptr lptr(pl);
+        env.push(lptr);
+        pool.insert(pl);
+        return lptr;
+    }
+    catch (...)
+    {
+        delete pl;
+        throw;
+    }
+
+    void
+    init(bool force_out)
+    {
+        release();
+
+        using BUILDIN = _lambda::lambda_pool::BUILDIN;
+        namespace prim = _lambda::primitive;
+        pool[BUILDIN::IN]   = inserter(new prim::in(pool, in()));
+        pool[BUILDIN::W]    = inserter(new prim::w(pool));
+        pool[BUILDIN::SUCC] = inserter(new prim::succ(pool));
+        pool[BUILDIN::OUT]  = inserter(new prim::out(pool, out(), force_out));
+    }
+
+    void
+    release() noexcept
+    {
+        env.clear();
+        for (const auto *ptr : pool)
+        {
+            delete ptr;
+        }
+        pool.clear();
+    }
+
+    void parser_impl();
 
 public:
-    out( const out & ) = default;
-    out( out && ) = default;
-
-    inline
-    out( lambda_pool &_pool, std::ostream &_out, bool _f = false ) noexcept
-      : __base( _pool ), sout( _out ), force( _f ) {}
-
-    inline lambda_ptr
-    operator()( const lambda_ptr &l ) const
+    explicit
+    interpreter(bool force_out = false)
     {
-        try
-        { this->sout.put( **l ); }
-        catch ( const lambda_error & )
-        {
-            if ( !this->force )
-            { throw; }
-            this->sout << "<lambda>";
-        }
-        return l;
+        init(force_out);
     }
-};
-// }}}
 
-} // namespace primitive
+    explicit
+    interpreter(std::istream &in, std::ostream &out, bool force_out = false)
+      : ecci::ecci_base(in, out)
+    {
+        init(force_out);
+    }
 
-} // namespace _lambda
+    explicit
+    interpreter(std::iostream &inout, bool force_out = false)
+      : interpreter(inout, inout, force_out)
+    { }
 
-// class grass::interpret {{{
-class interpret
-  : public _ecci::_ecci_base
-{
-    typedef _ecci::_ecci_base __base;
-    typedef _lambda::lambda_pool::BUILDIN BUILDIN;
+    ~interpreter() noexcept override { release(); }
 
-    interpret &
-    operator=( const interpret & ) = delete;
-    interpret &
-    operator=( interpret && ) = delete;
+    ecci::ecci_base &
+    parse(const std::string &code) override
+    {
+
+        std::copy_if(code.begin(), code.end(), std::back_inserter(buf), [](char c)
+        {
+            return c == 'w' || c == 'W' || c == 'v';
+        });
+        parser_impl();
+        return *this;
+    }
+
+    ecci::ecci_base &
+    run() override
+    {
+        if (buf.size() != 0)
+        {
+            buf += 'v';
+            parser_impl();
+        }
+        env.push((*env.top())(env.top()));
+        return *this;
+    }
 
 private:
     environment env;
     _lambda::lambda_pool pool;
 
     std::string buf;
-
-    inline _lambda::lambda_ptr
-    inserter( _lambda::lambda *ptr )
-    try
-    {
-        if ( auto uptr = dynamic_cast< _lambda::user * >( ptr ) )
-        { uptr->env = this->env; }
-
-        _lambda::lambda_ptr lptr( ptr );
-        this->env.push( lptr );
-        this->pool.insert( ptr );
-        return lptr;
-    }
-    catch ( ... )
-    {
-        delete ptr;
-        throw;
-    }
-
-    inline void
-    init( bool force_out )
-    {
-        this->release();
-
-        namespace lp = _lambda::primitive;
-        this->pool[ BUILDIN::IN ] =
-          this->inserter( new lp::in( this->pool, this->in() ) );
-        this->pool[ BUILDIN::W ] =
-          this->inserter( new lp::w( this->pool ) );
-        this->pool[ BUILDIN::SUCC ] =
-          this->inserter( new lp::succ( this->pool ) );
-        this->pool[ BUILDIN::OUT ] =
-          this->inserter( new lp::out( this->pool, this->out(), force_out ) );
-    }
-
-    inline void
-    release( void ) noexcept
-    {
-        this->env.clear();
-        for ( const auto *ptr : this->pool )
-        { delete ptr; }
-        this->pool.clear();
-    }
-
-    inline void
-    parser_impl( void );
-
-public:
-    explicit inline
-    interpret( bool _force_out = false )
-    { this->init( _force_out ); }
-
-    inline
-    interpret( std::istream &_in, std::ostream &_out,
-      bool _force_out = false )
-      : __base( _in, _out )
-    { this->init( _force_out ); }
-//    : __base( _in, _out ), interpret( _force_out ) {}
-
-    explicit inline
-    interpret( std::iostream &_inout, bool _force_out = false )
-      : __base( _inout )
-    { this->init( _force_out ); }
-//    : __base( _inout ), interpret( _force_out ) {}
-
-    inline
-    ~interpret( void ) noexcept
-    { this->release(); }
-
-    inline void
-    parse( const std::string &code )
-    {
-        auto validity_checker = []( char c )
-        { return c == 'w' || c == 'W' || c == 'v'; };
-
-        std::copy_if( code.begin(), code.end(),
-          std::back_inserter( this->buf ), validity_checker );
-        this->parser_impl();
-    }
-
-    inline void
-    run( void )
-    {
-        if ( this->buf.size() != 0 )
-        {
-            this->buf += 'v';
-            this->parser_impl();
-        }
-        auto &top = this->env.top();
-        this->env.push( ( *top )( top ) );
-    }
 };
-// }}}
 
-namespace
-{
+namespace {
 
-// grass::<anonymous namespace>::continuos_region() {{{
-template < typename _ForwardIterator >
-inline std::pair< std::size_t, _ForwardIterator >
-continuos_region( _ForwardIterator _first, _ForwardIterator _last )
+template <typename ForwardIterator>
+inline std::pair<std::size_t, ForwardIterator>
+continuos_region(ForwardIterator itr, ForwardIterator last)
 {
     std::size_t cnt = 0;
-    for ( auto &_val = *_first;
-      _first != _last && _val == *_first;
-      ++_first, ++cnt );
-    return std::make_pair( cnt, _first );
-}
-// }}}
-
+    for (auto &val = *itr; itr != last && val == *itr; ++itr, ++cnt) ;
+    return std::make_pair(cnt, itr);
 }
 
-// grass::interpret::parser_impl() {{{
+} // namespace grass::<anonymous-namespace>
+
 void
-interpret::parser_impl( void )
+interpreter::parser_impl()
 {
-    const auto &cend = this->buf.end();
-    auto       &&itr = this->buf.begin(), continue_itr = itr;
+    auto itr          = buf.begin();
+    auto cend         = buf.end();
+    auto continue_itr = itr;
 
     enum
     {
@@ -702,32 +555,34 @@ interpret::parser_impl( void )
     _lambda::user::body_t body;
 
     // TODO: refactor this block
-    while ( itr != cend )
+    while (itr != cend)
     {
-        auto region = continuos_region( itr, cend );
+        auto region = continuos_region(itr, cend);
         char c = *itr;
-        if ( c == 'v' )
+        if (c == 'v')
         {
-            switch ( state )
+            switch (state)
             {
               case GR_APPLICATION:
-                throw grass_error( "internal error (unexpected application terminate)" );
+                BOOST_THROW_EXCEPTION(
+                    grass_error("internal error (unexpected application terminate)"));
 
               case GR_FUNCTION:
-                this->inserter( new _lambda::user( this->pool, args, std::move( body ) ) );
-                state = GR_TOPLEVEL; // PATH THROUGH
+                inserter(new _lambda::user(pool, args, std::move(body)));
+                state = GR_TOPLEVEL;
+              // PATH THROUGH
 
-              case GR_TOPLEVEL: // PATH THROUGH
+              case GR_TOPLEVEL:
                 continue_itr = region.second;
                 break;
             }
         }
         else
         {
-            switch ( state )
+            switch (state)
             {
               case GR_TOPLEVEL:
-                switch ( c )
+                switch (c)
                 {
                   case 'w':
                     state = GR_FUNCTION;
@@ -742,38 +597,43 @@ interpret::parser_impl( void )
                 break;
 
               case GR_APPLICATION:
-                if ( c != 'w' )
-                { throw grass_error( "internal error (unexpected char in application)" ); }
-                this->env.push( ( *this->env[ func ] )( this->env[ region.first ] ) );
+                if (c != 'w')
+                {
+                    BOOST_THROW_EXCEPTION(
+                        grass_error("internal error (unexpected char in application)"));
+                }
+                env.push((*env[func])(env[region.first]));
                 state = GR_TOPLEVEL;
                 continue_itr = region.second;
                 break;
 
               case GR_FUNCTION:
-                if ( c != 'W' )
-                { throw grass_error( "internal error (unexpected char in define function)" ); }
+                if (c != 'W')
+                {
+                    BOOST_THROW_EXCEPTION(
+                        grass_error("internal error (unexpected char in define function)"));
+                }
                 func = region.first;
 
-                region = continuos_region( itr = region.second, cend );
-                if ( region.second == cend )
-                { break; }
+                region = continuos_region(itr = region.second, cend);
+                if (region.second == cend) { break; }
 
-                if ( *itr != 'w' )
-                { throw grass_error( "internal error (unexpected char in function args)" ); }
-                body.push_back( typename std::enable_if< true, decltype( body ) >::type::value_type( func - 1, region.first - 1 ) );
-//  And, I hope to become able to write down follow code.
-//              body.push_back( typename decltype( body )::value_type( func - 1, region.first - 1 ) );
+                if (*itr != 'w')
+                {
+                    BOOST_THROW_EXCEPTION(
+                        grass_error("internal error (unexpected char in function args)"));
+                }
+                body.push_back(decltype(body)::value_type(func - 1, region.first - 1));
                 break;
             }
         }
         itr = region.second;
     }
 
-    this->buf.assign( continue_itr, cend );
+    buf.assign(continue_itr, cend);
 }
-// }}}
 
 } // namespace grass
 
-#endif // _gri_hpp_
+#endif // esolang_gri_hpp_
 
